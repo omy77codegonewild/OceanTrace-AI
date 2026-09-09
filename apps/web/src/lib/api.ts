@@ -84,7 +84,7 @@ export interface Candidate {
   raw: any;
   evidence: string[];
   limitations: string[];
-  vessel: { name: string | null; type: string | null; type_normalized?: string; length_m: number | null; source: string | null };
+  vessel: { name: string | null; type: string | null; type_normalized?: string; length_m: number | null; source: string | null; flag?: string | null; imo?: string | null; callsign?: string | null; gfw?: any };
   track: Feature;
   review_status: string | null;
   review_note: string | null;
@@ -156,6 +156,7 @@ export const api = {
   config: () => api.get<any>("/api/v1/config"),
   cases: () => api.get<any[]>("/api/v1/cases"),
   createCase: (name: string, data_mode: DataMode, notes?: string) => api.post<CaseDetail>("/api/v1/cases", { name, data_mode, notes }),
+  createSyntheticDemo: (name?: string) => api.post<{ job_id: string }>("/api/v1/cases/synthetic-demo", { name: name || "Synthetic Smoke Test Case" }),
   getCase: (id: string) => api.get<CaseDetail>(`/api/v1/cases/${id}`),
   deleteCase: (id: string) => api.del<void>(`/api/v1/cases/${id}`),
   job: (id: string) => api.get<Job>(`/api/v1/jobs/${id}`),
@@ -171,6 +172,7 @@ export const api = {
   attributionLayer: (caseId: string, runId?: string) => api.get<Attribution>(`/api/v1/cases/${caseId}/layers/attribution${runId ? `?run_id=${runId}` : ""}`),
   aisTracks: (caseId: string, q = "") => api.get<FeatureCollection>(`/api/v1/cases/${caseId}/layers/ais_tracks${q}`),
   importAis: (caseId: string, form: FormData) => api.upload<{ job_id: string }>(`/api/v1/cases/${caseId}/ais/import`, form),
+  generateSyntheticAis: (caseId: string) => api.post<{ job_id: string }>(`/api/v1/cases/${caseId}/ais/synthetic`),
   deleteAis: (caseId: string, importId: string) => api.del<void>(`/api/v1/cases/${caseId}/ais/${importId}`),
   liveRecord: (caseId: string, bbox: number[], minutes: number) => api.post<{ job_id: string }>(`/api/v1/cases/${caseId}/ais/live/record`, { bbox, minutes }),
   attribute: (caseId: string, body: any) => api.post<{ job_id: string }>(`/api/v1/cases/${caseId}/attribute`, body),

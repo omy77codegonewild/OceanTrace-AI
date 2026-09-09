@@ -333,6 +333,25 @@ def attribute(case_id: str, hindcast: dict[str, Any], slick_centroid: list[float
     results.sort(key=lambda r: -r["score"])
     for i, r in enumerate(results, start=1):
         r["rank"] = i
+
+    # Enrich top scored candidates with Global Fishing Watch registry identity
+    try:
+        from ..ais.gfw import enrich_vessel_details
+        for r in results[:10]:
+            gfw_meta = enrich_vessel_details(r["mmsi"], r["vessel"].get("name"))
+            if gfw_meta:
+                r["vessel"]["gfw"] = gfw_meta
+                if gfw_meta.get("flag"):
+                    r["vessel"]["flag"] = gfw_meta["flag"]
+                if gfw_meta.get("imo"):
+                    r["vessel"]["imo"] = gfw_meta["imo"]
+                if gfw_meta.get("callsign"):
+                    r["vessel"]["callsign"] = gfw_meta["callsign"]
+                if not r["vessel"].get("name") and gfw_meta.get("name"):
+                    r["vessel"]["name"] = gfw_meta["name"]
+    except Exception:
+        pass
+
     top_n = int(cfg_attr.get("top_n", 10))
     summary = {
         "vessels_in_dataset": int(n_all), "vessels_in_time_window": int(n_time), "vessels_in_search_region": len(tracks), "vessels_scored": len(results),

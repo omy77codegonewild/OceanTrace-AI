@@ -9,7 +9,7 @@ export default function ScenePanel({ onClose }: { onClose: () => void }) {
   const [tab, setTab] = useState<"upload" | "catalog">("upload");
   const [file, setFile] = useState<File | null>(null);
   const [bounds, setBounds] = useState("");
-  const [acq, setAcq] = useState("");
+  const [acq, setAcq] = useState(() => new Date().toISOString().replace(/\.\d{3}Z$/, "Z"));
   const [thr, setThr] = useState<number>(config?.detection_postprocess?.prob_threshold ?? 0.5);
   const [minArea, setMinArea] = useState<number>(config?.detection_postprocess?.min_area_km2 ?? 0.15);
   const [over, setOver] = useState(false);

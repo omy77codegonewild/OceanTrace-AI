@@ -41,8 +41,7 @@ function MetOcean() {
 
 export default function Console() {
   const st = useStore();
-  const { caseData, hindcast, attribution, panel, setPanel, focus, setFocus, layers, toggleLayer, jobs, replayStep, setReplay, playing, setPlaying, health, selectedMmsi, selectedSlick } = st;
-  const [tool, setTool] = useState<Tool>("none");
+  const { caseData, hindcast, attribution, panel, setPanel, tool, setTool, focus, setFocus, layers, toggleLayer, jobs, replayStep, setReplay, playing, setPlaying, health, selectedMmsi, selectedSlick } = st;
 
   const stepDone = [!!caseData?.slicks.features.length, !!hindcast, !!attribution, !!(attribution && caseData?.slicks.features.some((f) => f.properties.review_status))];
   const activeStep = !stepDone[0] ? 1 : !stepDone[1] ? 2 : !stepDone[2] ? 3 : 4;
@@ -89,8 +88,9 @@ export default function Console() {
   return (
     <div className="app">
       <header className="topbar">
-        <div className="row" style={{ gap: 10 }}>
-          <span style={{ fontWeight: 800, letterSpacing: "0.12em", color: "var(--cyan)" }}>OCEANTRACE AI</span>
+        <div className="row" style={{ gap: 10, alignItems: "center" }}>
+          <img src="/logo.png" alt="Spill Forensics Logo" style={{ height: "28px", width: "auto", display: "block" }} />
+          <span style={{ fontWeight: 800, letterSpacing: "0.12em", color: "var(--cyan)" }}>SPILL FORENSICS</span>
           <span className="muted small">| SAR Oil-Spill Source Attribution</span>
         </div>
         <button className="btn sm ghost" onClick={() => st.setCase(null)}>← cases</button>

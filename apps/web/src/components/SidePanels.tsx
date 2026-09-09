@@ -78,8 +78,24 @@ export function SceneCard() {
 }
 
 export function HindcastCard() {
-  const { hindcast, forecast } = useStore();
-  if (!hindcast) return <Card title="Reverse drift"><div className="small muted">No hindcast yet. Select a slick, open the drift panel (⟲) and run a backtrack.</div></Card>;
+  const { hindcast, forecast, selectedSlick, setTool, caseData } = useStore();
+  if (!hindcast) {
+    const hasSlick = Boolean(selectedSlick || caseData?.slicks?.features?.length);
+    return (
+      <Card title="Reverse drift">
+        <div className="small muted" style={{ marginBottom: 10 }}>
+          No hindcast yet. Run backward Lagrangian drift (Copernicus + ERA5) to compute the spill origin region & release window.
+        </div>
+        <button
+          className="btn primary sm fill"
+          onClick={() => setTool("drift")}
+          disabled={!hasSlick}
+        >
+          ⏱️ Run Reverse Drift Hindcast
+        </button>
+      </Card>
+    );
+  }
   const m = hindcast.metrics || {};
   const d = hindcast.detail || {};
   const areas = m.origin_areas_km2 || {};
@@ -113,8 +129,23 @@ export function HindcastCard() {
 }
 
 export function TopSuspectCard() {
-  const { attribution, selectedMmsi, selectMmsi, setPanel } = useStore();
-  if (!attribution) return <Card title="AIS correlation"><div className="small muted">No attribution run yet. Import AIS covering the release window and run the correlation (ship icon).</div></Card>;
+  const { attribution, selectedMmsi, selectMmsi, setPanel, setTool, hindcast } = useStore();
+  if (!attribution) {
+    return (
+      <Card title="AIS correlation">
+        <div className="small muted" style={{ marginBottom: 10 }}>
+          No attribution run yet. Correlate vessel AIS tracks against the spill origin corridor.
+        </div>
+        <button
+          className="btn sm fill"
+          onClick={() => setTool("ais")}
+          disabled={!hindcast}
+        >
+          ⚓ Run AIS Attribution
+        </button>
+      </Card>
+    );
+  }
   const c = attribution.candidates.find((x) => x.mmsi === selectedMmsi) || attribution.candidates[0];
   const s = attribution.summary || {};
   if (!c) return <Card title="AIS correlation" amber><div className="small">No vessel had AIS positions inside the search corridor ({s.vessels_in_dataset} vessels in dataset, {s.vessels_in_time_window} in time window). A dark (non-transmitting) source cannot be excluded.</div></Card>;

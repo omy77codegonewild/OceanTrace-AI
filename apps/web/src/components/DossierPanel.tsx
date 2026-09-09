@@ -25,19 +25,41 @@ export default function DossierPanel() {
         </div>
       </div>
       <div className="grid2" style={{ gridTemplateColumns: "1fr 380px", alignItems: "start" }}>
-        <Card title="Report preview" right={<div className="row"><button className="btn sm ghost" onClick={() => setReload((x) => x + 1)}>refresh</button><a className="btn sm primary" href={api.reportUrl(caseId)} target="_blank" rel="noreferrer">Open / print ↗</a></div>}>
+        <Card
+          title="Incident Dossier Report Preview"
+          right={
+            <div className="row" style={{ gap: 8 }}>
+              <button className="btn sm ghost" onClick={() => setReload((x) => x + 1)}>🔄 Refresh</button>
+              <a className="btn sm" href={api.reportUrl(caseId)} download={`${caseData.name || caseId}_dossier.html`}>
+                📥 Download HTML
+              </a>
+              <a className="btn sm primary" href={api.reportUrl(caseId)} target="_blank" rel="noreferrer">
+                🖨️ Print / Save as PDF ↗
+              </a>
+            </div>
+          }
+        >
           {ready ? (
             <iframe key={reload + (caseData.updated_at || "")} title="report" src={api.reportUrl(caseId)} style={{ width: "100%", height: "70vh", border: "1px solid var(--line)", borderRadius: 8, background: "#fff" }} />
           ) : <div className="small muted">The dossier needs at least a scene and one detection. Steps completed: scene {caseData.scene ? "✓" : "✗"} · detections {caseData.slicks.features.length} · hindcast {hindcast ? "✓" : "✗"} · attribution {attribution ? "✓" : "✗"}.</div>}
         </Card>
         <div className="col">
-          <Card title="Exports">
-            <div className="col">
-              <a className="btn block wrap" href={api.exportUrl(caseId, "json")} download>Case bundle (JSON) · slicks, hindcast, candidates, provenance</a>
-              <a className="btn block wrap" href={api.exportUrl(caseId, "geojson")} download>All layers (GeoJSON) · slicks, origin regions, candidate tracks</a>
-              <a className="btn block wrap" href={api.reportUrl(caseId)} download={`${caseId}_report.html`}>Report (HTML, self-contained, printable)</a>
+          <Card title="Download Dossier &amp; Data Exports">
+            <div className="col" style={{ gap: 8 }}>
+              <a className="btn primary block wrap" href={api.reportUrl(caseId)} download={`${caseData.name || caseId}_dossier.html`}>
+                📥 Download Incident Report (HTML)
+              </a>
+              <a className="btn block wrap" href={api.reportUrl(caseId)} target="_blank" rel="noreferrer">
+                🖨️ Print / Save as PDF Dossier ↗
+              </a>
+              <a className="btn block wrap" href={api.exportUrl(caseId, "json")} download={`${caseData.name || caseId}_bundle.json`}>
+                📦 Complete Case Bundle (JSON)
+              </a>
+              <a className="btn block wrap" href={api.exportUrl(caseId, "geojson")} download={`${caseData.name || caseId}_layers.geojson`}>
+                🗺️ All Map Layers (GeoJSON)
+              </a>
             </div>
-            <div className="small muted" style={{ marginTop: 8 }}>Every export carries data_mode labels, model versions, config hash and the disclaimer that vessel rankings are investigation priorities, not findings.</div>
+            <div className="small muted" style={{ marginTop: 8 }}>Every export carries data_mode labels, model versions, config hash and the disclaimer that vessel rankings are investigation priorities, not legal findings.</div>
           </Card>
           <Card title="Completeness">
             <table className="tbl small" style={{ width: "100%" }}>

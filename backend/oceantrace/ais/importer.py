@@ -98,7 +98,7 @@ def import_ais_csv(case_id: str, path: Path, *, source_label: str, data_mode: st
     ]
     import_id = f"ais_{uuid.uuid4().hex[:10]}"
     tsv = ts[valid]
-    epoch = (tsv.astype("int64") // 10**9).astype(float)
+    epoch = pd.Series([float(t.timestamp()) for t in tsv], index=tsv.index, dtype=float)
     vt = df["vessel_type"].str.strip().str.lower().replace({"": None})
     vn = df["vessel_name"].str.strip().replace({"": None})
     src = df["source"].str.strip().replace({"": None}).fillna(source_label)

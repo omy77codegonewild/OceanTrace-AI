@@ -34,6 +34,7 @@ interface State {
   selectedSlick: string | null;
   selectedMmsi: number | null;
   panel: Panel;
+  tool: "none" | "scene" | "drift" | "ais";
   focus: Focus;
   focusNonce: number;
   layers: LayerVis;
@@ -55,6 +56,7 @@ interface State {
   selectSlick: (id: string | null) => void;
   selectMmsi: (m: number | null) => void;
   setPanel: (p: Panel) => void;
+  setTool: (t: "none" | "scene" | "drift" | "ais") => void;
   setFocus: (f: Focus) => void;
   toggleLayer: (k: keyof LayerVis) => void;
   setBasemap: (b: "dark" | "ocean" | "osm") => void;
@@ -77,6 +79,7 @@ export const useStore = create<State>((set, get) => ({
   selectedSlick: null,
   selectedMmsi: null,
   panel: "map",
+  tool: "none",
   focus: "corridor",
   focusNonce: 0,
   layers: { scene: true, slicks: true, origin: true, particles: true, tracks: true, candidates: true, gaps: true, forecast: true, search: false, vectors: true },
@@ -168,6 +171,7 @@ export const useStore = create<State>((set, get) => ({
   selectSlick: (id) => set({ selectedSlick: id }),
   selectMmsi: (m) => set({ selectedMmsi: m, focus: m ? "suspect" : get().focus, focusNonce: get().focusNonce + 1 }),
   setPanel: (p) => set({ panel: p }),
+  setTool: (t) => set({ tool: t, panel: t === "none" ? get().panel : "map" }),
   setFocus: (f) => {
     // "Top Suspect" with nothing selected -> select the rank-1 candidate so the camera has a target
     const top = get().attribution?.candidates?.[0];

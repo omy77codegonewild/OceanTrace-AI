@@ -23,6 +23,7 @@ from ..geo.utils import buffer_km, geom_to_geojson, shape_metrics, to_local, to_
 from .base import DetectionAdapter
 from .adapters.classical import ClassicalDarkSpotAdapter
 from .adapters.onnx_adapter import ModelNotAvailable, OnnxSegmentationAdapter
+from .adapters.pytorch_adapter import PyTorchModelNotAvailable, PyTorchSegmentationAdapter
 
 log = logging.getLogger("oceantrace.detection")
 
@@ -30,27 +31,59 @@ log = logging.getLogger("oceantrace.detection")
 def build_adapter(override: str | None = None) -> DetectionAdapter:
     cfg = get_algo_config().section("detection")
     choice = (override or cfg.get("adapter", "auto")).lower()
+
+    # 1. PyTorch U-Net adapter (trained model best_oil_spill_unet.pth)
+    if choice in ("pytorch", "pytorch_unet", "unet", "auto"):
+        py_cfg = cfg.get("pytorch", {})
+        py_path = resolve_path(py_cfg.get("model_path", "data/models/best_oil_spill_unet.pth"))
+        try:
+            return PyTorchSegmentationAdapter(py_cfg, py_path)
+        except (PyTorchModelNotAvailable, Exception) as e:
+            if choice in ("pytorch", "pytorch_unet", "unet"):
+                raise
+            log.info("PyTorch model unavailable (%s); checking ONNX", e)
+
+    # 2. ONNX segmentation adapter
     onnx_cfg = cfg.get("onnx", {})
     model_path = resolve_path(onnx_cfg.get("model_path", "data/models/oilspill_seg.onnx"))
     if choice in ("onnx", "auto"):
         try:
             return OnnxSegmentationAdapter(onnx_cfg, model_path)
-        except ModelNotAvailable as e:
+        except (ModelNotAvailable, Exception) as e:
             if choice == "onnx":
                 raise
             log.info("ONNX model unavailable (%s); using classical dark-spot adapter", e)
+
+    # 3. Fallback to classical CFAR adapter
     return ClassicalDarkSpotAdapter(cfg.get("classical", {}))
 
 
 def adapter_status() -> dict[str, Any]:
     cfg = get_algo_config().section("detection")
+    py_cfg = cfg.get("pytorch", {})
+    py_path = resolve_path(py_cfg.get("model_path", "data/models/best_oil_spill_unet.pth"))
     onnx_cfg = cfg.get("onnx", {})
-    model_path = resolve_path(onnx_cfg.get("model_path", "data/models/oilspill_seg.onnx"))
+    onnx_path = resolve_path(onnx_cfg.get("model_path", "data/models/oilspill_seg.onnx"))
+
+    py_present = py_path.exists() or Path("c:/Users/DELL/OneDrive/Desktop/OTtest/oil-spill-detection-model/best_oil_spill_unet.pth").exists()
+    onnx_present = onnx_path.exists()
+
+    cfg_adapter = cfg.get("adapter", "auto")
+    if (cfg_adapter in ("auto", "pytorch", "pytorch_unet", "unet")) and py_present:
+        active = "pytorch_unet"
+    elif (cfg_adapter in ("auto", "onnx")) and onnx_present:
+        active = "onnx"
+    else:
+        active = "classical"
+
     return {
-        "configured_adapter": cfg.get("adapter", "auto"),
-        "onnx_model_path": str(model_path),
-        "onnx_model_present": model_path.exists(),
-        "active_adapter": "onnx" if model_path.exists() and cfg.get("adapter", "auto") in ("auto", "onnx") else "classical",
+        "configured_adapter": cfg_adapter,
+        "pytorch_model_path": str(py_path),
+        "pytorch_model_present": py_present,
+        "onnx_model_path": str(onnx_path),
+        "onnx_model_present": onnx_present,
+        "active_adapter": active,
+        "model_version": py_cfg.get("model_version", "unet-oilspill-v1.0") if active == "pytorch_unet" else (onnx_cfg.get("model_version", "user-onnx") if active == "onnx" else cfg.get("classical", {}).get("model_version")),
         "classical_version": cfg.get("classical", {}).get("model_version"),
     }
 
@@ -89,11 +122,17 @@ def run_detection(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     with rasterio.open(analysis_tif) as ds:
-        arr = ds.read(1).astype("float32")
+        full_arr = ds.read().astype("float32")
         transform: Affine = ds.transform
         crs = ds.crs
-    valid = np.isfinite(arr) & (arr != 0)
-    H, W = arr.shape
+    if full_arr.ndim == 3 and full_arr.shape[0] == 1:
+        arr_2d = full_arr[0]
+    elif full_arr.ndim == 3:
+        arr_2d = full_arr[0]
+    else:
+        arr_2d = full_arr
+    valid = np.isfinite(arr_2d) & (arr_2d != 0)
+    H, W = arr_2d.shape
     ts, ov = adapter.tile_size, adapter.tile_overlap
     rows, cols = _tile_grid(H, ts, ov), _tile_grid(W, ts, ov)
     n_tiles = len(rows) * len(cols)
@@ -106,7 +145,10 @@ def run_detection(
     for r0, r1 in rows:
         for c0, c1 in cols:
             k += 1
-            tile = arr[r0:r1, c0:c1]
+            if full_arr.ndim == 3 and full_arr.shape[0] > 1:
+                tile = full_arr[:, r0:r1, c0:c1]
+            else:
+                tile = arr_2d[r0:r1, c0:c1]
             vm = valid[r0:r1, c0:c1]
             if vm.mean() < 0.02:
                 continue

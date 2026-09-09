@@ -16,10 +16,18 @@ scene:
   # never hardcoded.
 
 detection:
-  # Adapter selection: "onnx" (your uploaded model) or "classical" (dark-spot CFAR fallback).
-  # If "onnx" is selected but no weights are present, the API refuses to silently
-  # fall back — the run is labelled with the adapter that actually executed.
-  adapter: "auto"          # auto = onnx if weights exist, else classical
+  # Adapter selection: "pytorch" (trained U-Net weights), "onnx", or "classical" (dark-spot CFAR fallback).
+  # If "auto", OceanTrace uses the trained PyTorch U-Net model if weights exist,
+  # otherwise ONNX, and falls back to classical with clear provenance.
+  adapter: "auto"          # auto = pytorch if weights exist, elif onnx, else classical
+  pytorch:
+    model_path: "data/models/best_oil_spill_unet.pth"
+    model_version: "unet-oilspill-v1.0"
+    input_size: 512         # tile edge in pixels fed to the model
+    tile_overlap: 64        # pixel overlap between tiles
+    input_channels: 2       # 2 = dual-band / dual-pol SAR input
+    normalize: "none"       # none (raw amplitude) | minmax | zscore
+    device: "auto"          # auto | cuda | cpu
   onnx:
     model_path: "data/models/oilspill_seg.onnx"
     model_version: "user-onnx"

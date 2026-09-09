@@ -20,7 +20,11 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 class Settings(BaseSettings):
     """Environment-driven settings (secrets + deployment)."""
 
-    model_config = SettingsConfigDict(env_file=str(REPO_ROOT / ".env"), env_prefix="OT_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=(str(REPO_ROOT / ".env"), str(REPO_ROOT / "backend" / ".env"), ".env"),
+        env_prefix="OT_",
+        extra="ignore"
+    )
 
     data_dir: Path = REPO_ROOT / "data"
     config_path: Path = REPO_ROOT / "configs" / "default.yaml"
@@ -30,6 +34,7 @@ class Settings(BaseSettings):
     # Optional external credentials (never rendered to the frontend)
     aisstream_api_key: str | None = None
     datalastic_api_key: str | None = None
+    gfw_api_token: str | None = None
     max_workers: int = 2
     log_level: str = "INFO"
 

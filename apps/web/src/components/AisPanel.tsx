@@ -31,10 +31,15 @@ export default function AisPanel({ onClose }: { onClose: () => void }) {
     const pad = 0.5;
     await runJob(`Record live AIS ${liveMin} min`, () => api.liveRecord(caseId, [b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad], liveMin));
   };
+  const generateSynth = async () => {
+    if (!caseId) return;
+    if (!hindcast) return notify("error", "Run a hindcast first to define the release window and origin region");
+    await runJob("Synthesize AIS corridor traffic", () => api.generateSyntheticAis(caseId));
+  };
   const attribute = async () => {
     if (!caseId) return;
     if (!hindcast) return notify("error", "Run a hindcast first — attribution needs an origin region and release window");
-    if (!caseData?.ais_summary.positions) return notify("error", "Load AIS data first (CSV import or live recording)");
+    if (!caseData?.ais_summary.positions) return notify("error", "Load AIS data first (CSV import, live recording, or synthetic corridor generator)");
     const norm: Record<string, number> = {};
     keys.forEach((k) => (norm[k] = (w[k] ?? defW[k] ?? 0) / (sum || 1)));
     await runJob("AIS attribution", () => api.attribute(caseId, { hindcast_run_id: hindcast.id, weights: norm }), async () => { useStore.getState().setPanel("suspects"); });
@@ -69,6 +74,14 @@ export default function AisPanel({ onClose }: { onClose: () => void }) {
           </select>
           <input className="input grow" placeholder="source label (provider / archive)" value={label} onChange={(e) => setLabel(e.target.value)} />
           <button className="btn primary" onClick={importCsv} disabled={!file}>Import</button>
+        </div>
+        <div className="tile">
+          <div className="row">
+            <span className="xs cyan">Scenario Benchmark Traffic</span>
+            <Badge kind="synthetic">SYNTHETIC</Badge>
+          </div>
+          <div className="small muted" style={{ margin: "4px 0" }}>Generate synthetic corridor traffic matching the estimated release window to test attribution and suspect ranking immediately on this SAR scene.</div>
+          <button className="btn sm fill" onClick={generateSynth} disabled={!hindcast}>⚡ Generate Corridor AIS Traffic</button>
         </div>
         <div className="tile">
           <div className="row"><span className="xs cyan">Live AIS recorder (aisstream.io)</span><Badge kind={health?.integrations?.aisstream_key_configured ? "ok" : "neutral"}>{health?.integrations?.aisstream_key_configured ? "key configured" : "set OT_AISSTREAM_API_KEY"}</Badge></div>

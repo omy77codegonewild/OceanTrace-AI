@@ -90,6 +90,8 @@ export default function SuspectsPanel() {
                   <Factor name="D data quality (multiplier)" value={sel.factors.data_quality} amber />
                 </div>
                 <KV items={[
+                  ["vessel type", sel.vessel?.type || "unknown"],
+                  ["flag / IMO", sel.vessel?.flag || sel.vessel?.imo ? `${sel.vessel?.flag || "—"}${sel.vessel?.imo ? ` · IMO ${sel.vessel.imo}` : ""}${sel.vessel?.callsign ? ` (${sel.vessel.callsign})` : ""}` : "—"],
                   ["min distance to origin", `${fmtNum(sel.raw?.min_distance_km, 1)} km`],
                   ["space-time min", sel.raw?.spacetime_min_km == null ? "n/a" : `${fmtNum(sel.raw.spacetime_min_km, 1)} km`],
                   ["closest approach", <span className="small">{fmtUtc(sel.raw?.closest_time_utc)}</span>],

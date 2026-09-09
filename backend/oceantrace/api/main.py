@@ -32,7 +32,7 @@ async def _lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="OceanTrace AI API", version="0.3.0", description="SAR oil-slick detection → hindcast → AIS attribution (investigation support, not legal findings).",
+app = FastAPI(title="Spill Forensics API", version="0.3.0", description="SAR oil-slick detection → hindcast → AIS attribution (investigation support, not legal findings).",
               docs_url="/api/docs", openapi_url="/api/openapi.json", lifespan=_lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
@@ -71,7 +71,7 @@ async def _save_upload(up: UploadFile, max_mb: float, sub: str) -> Path:
 def health() -> dict[str, Any]:
     s = get_settings()
     return {"status": "ok", "version": app.version, "config_version": get_algo_config().version, "detector": adapter_status(),
-            "integrations": {"aisstream_key_configured": bool(s.aisstream_api_key), "open_meteo": "no key required"}}
+            "integrations": {"aisstream_key_configured": bool(s.aisstream_api_key), "gfw_token_configured": bool(s.gfw_api_token), "open_meteo": "no key required"}}
 
 
 @app.get("/api/v1/config")
@@ -88,6 +88,12 @@ def cases_list() -> list[dict[str, Any]]:
 @app.post("/api/v1/cases", status_code=201)
 def cases_create(body: CaseCreate) -> dict[str, Any]:
     return service.create_case(body.name, body.data_mode, body.notes)
+
+
+@app.post("/api/v1/cases/synthetic-demo", status_code=202)
+def cases_create_synthetic_demo(name: str = Body(default="Synthetic Smoke Test Case", embed=True)) -> JSONResponse:
+    job_id = service.create_synthetic_demo_case(name)
+    return _accepted(job_id)
 
 
 @app.get("/api/v1/cases/{case_id}")
@@ -287,6 +293,14 @@ def ais_live(case_id: str, body: LiveRecordRequest) -> JSONResponse:
         raise _err(e)
 
 
+@app.post("/api/v1/cases/{case_id}/ais/synthetic", status_code=202)
+def ais_synthetic(case_id: str) -> JSONResponse:
+    try:
+        return _accepted(service.ais_generate_synthetic_job(case_id))
+    except Exception as e:
+        raise _err(e)
+
+
 @app.post("/api/v1/cases/{case_id}/attribute", status_code=202)
 def attribute(case_id: str, body: AttributeRequest | None = Body(default=None)) -> JSONResponse:
     body = body or AttributeRequest()
@@ -336,6 +350,13 @@ def report_html(case_id: str) -> Response:
     except Exception as e:
         raise _err(e)
     return Response(content=html, media_type="text/html")
+
+
+@app.get("/api/v1/vessels/search")
+def vessel_search(query: str = Query(..., description="Vessel name, MMSI, or IMO")) -> dict[str, Any]:
+    from ..ais.gfw import search_vessel_gfw
+    results = search_vessel_gfw(query)
+    return {"query": query, "count": len(results), "results": results}
 
 
 # Serve built frontend if present (single-process deployment)

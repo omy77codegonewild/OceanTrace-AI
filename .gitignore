@@ -15,4 +15,6 @@ data/env/
 data/ais/
 data/exports/
 data/models/*.onnx
+data/models/*.pth
 data/*.sqlite*
+backend/test_pytorch_adapter.py

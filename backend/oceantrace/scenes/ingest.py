@@ -179,63 +179,73 @@ def ingest_scene(
             meta["georef_source"] = "manual"
             meta["warnings"].append("Georeference supplied manually by analyst; positional accuracy depends on the entered bounds.")
 
-        # acquisition time precedence: manual > tiff tag > filename
+        # acquisition time precedence: manual > tiff tag > filename > current UTC fallback
         acq, acq_src = (t_manual, "analyst_input") if t_manual else ((t_tag, t_tag_src) if t_tag else (t_name, t_src))
         if acq is None:
-            raise SceneValidationError("acquisition timestamp unavailable: not in TIFF tags or filename; supply acquisition_time_utc")
+            acq = datetime.now(timezone.utc).replace(microsecond=0)
+            acq_src = "default_fallback"
+            meta["warnings"].append("Acquisition timestamp not in file tags or filename; defaulted to current UTC.")
         meta["acquisition_time_utc"] = acq.strftime("%Y-%m-%dT%H:%M:%SZ")
         meta["acquisition_time_source"] = acq_src
 
-        # ---- read band 1, downsampling very large scenes to a working resolution ----
-        band = 1
+        # ---- read bands (e.g. dual-pol VV+VH), downsampling very large scenes ----
+        num_bands = min(ds.count, 2)
         ov = 1
         max_px = int(max_analysis_px)
         if max(ds.width, ds.height) > max_px:
             ov = int(np.ceil(max(ds.width, ds.height) / max_px))
             meta["warnings"].append(f"Scene downsampled {ov}x for analysis (native {ds.width}x{ds.height}); native-resolution tiling is a post-MVP item.")
         out_shape = (max(1, ds.height // ov), max(1, ds.width // ov))
-        data = ds.read(band, out_shape=out_shape, resampling=Resampling.average, masked=True).astype("float32")
-        nodata = ds.nodata
-        arr = data.filled(np.nan)
-        if nodata is not None:
-            arr = np.where(arr == nodata, np.nan, arr)
-        arr = np.where(arr == 0, np.nan, arr)  # 0 is the universal SAR nodata (GRD borders)
-        meta["downsample_factor"] = ov
 
         dst_crs = RioCRS.from_string(working_crs)
-        rh, rw = arr.shape
-        if has_gcps:
-            from rasterio.control import GroundControlPoint
+        bands_out = []
+        out_transform = None
 
-            g2 = [GroundControlPoint(row=g.row / ov, col=g.col / ov, x=g.x, y=g.y, z=g.z) for g in gcps]
-            transform, w, h = calculate_default_transform(src_crs, dst_crs, rw, rh, gcps=g2)
-            dst = np.zeros((h, w), dtype="float32")
-            reproject(source=np.nan_to_num(arr, nan=0.0), destination=dst, gcps=g2, src_crs=src_crs, dst_transform=transform, dst_crs=dst_crs,
-                      resampling=Resampling.bilinear, src_nodata=0.0, dst_nodata=0.0)
-            arr = np.where(dst == 0, np.nan, dst)
-            out_transform = transform
-        else:
-            if has_georef:
-                src_transform = ds.transform @ ds.transform.scale(ds.width / rw, ds.height / rh)
-            else:
-                src_transform = from_bounds(min_lon, min_lat, max_lon, max_lat, rw, rh)
-            # ---- reproject/resample to working CRS analysis raster ----
-            if has_georef and src_crs != dst_crs:
-                transform, w, h = calculate_default_transform(src_crs, dst_crs, rw, rh, *ds.bounds)
+        for b in range(1, num_bands + 1):
+            data = ds.read(b, out_shape=out_shape, resampling=Resampling.average, masked=True).astype("float32")
+            nodata = ds.nodata
+            arr_b = data.filled(np.nan)
+            if nodata is not None:
+                arr_b = np.where(arr_b == nodata, np.nan, arr_b)
+            arr_b = np.where(arr_b == 0, np.nan, arr_b)
+
+            rh, rw = arr_b.shape
+            if has_gcps:
+                from rasterio.control import GroundControlPoint
+
+                g2 = [GroundControlPoint(row=g.row / ov, col=g.col / ov, x=g.x, y=g.y, z=g.z) for g in gcps]
+                transform, w, h = calculate_default_transform(src_crs, dst_crs, rw, rh, gcps=g2)
                 dst = np.zeros((h, w), dtype="float32")
-                reproject(source=np.nan_to_num(arr, nan=0.0), destination=dst, src_transform=src_transform, src_crs=src_crs,
-                          dst_transform=transform, dst_crs=dst_crs, resampling=Resampling.bilinear, src_nodata=0.0, dst_nodata=0.0)
-                arr, out_transform = np.where(dst == 0, np.nan, dst), transform
+                reproject(source=np.nan_to_num(arr_b, nan=0.0), destination=dst, gcps=g2, src_crs=src_crs, dst_transform=transform, dst_crs=dst_crs,
+                          resampling=Resampling.bilinear, src_nodata=0.0, dst_nodata=0.0)
+                arr_b = np.where(dst == 0, np.nan, dst)
+                out_transform = transform
             else:
-                out_transform = src_transform
+                if has_georef:
+                    src_transform = ds.transform @ ds.transform.scale(ds.width / rw, ds.height / rh)
+                else:
+                    src_transform = from_bounds(min_lon, min_lat, max_lon, max_lat, rw, rh)
+                if has_georef and src_crs != dst_crs:
+                    transform, w, h = calculate_default_transform(src_crs, dst_crs, rw, rh, *ds.bounds)
+                    dst = np.zeros((h, w), dtype="float32")
+                    reproject(source=np.nan_to_num(arr_b, nan=0.0), destination=dst, src_transform=src_transform, src_crs=src_crs,
+                              dst_transform=transform, dst_crs=dst_crs, resampling=Resampling.bilinear, src_nodata=0.0, dst_nodata=0.0)
+                    arr_b, out_transform = np.where(dst == 0, np.nan, dst), transform
+                else:
+                    out_transform = src_transform
+            bands_out.append(arr_b)
+
+        meta["downsample_factor"] = ov
+        arr = bands_out[0]
 
     h, w = arr.shape
     analysis_path = scene_dir / "analysis.tif"
     with rasterio.open(
-        analysis_path, "w", driver="GTiff", height=h, width=w, count=1, dtype="float32", crs=dst_crs,
+        analysis_path, "w", driver="GTiff", height=h, width=w, count=len(bands_out), dtype="float32", crs=dst_crs,
         transform=out_transform, nodata=np.nan, compress="deflate", tiled=True, blockxsize=256, blockysize=256,
     ) as out:
-        out.write(arr, 1)
+        for bi, b_arr in enumerate(bands_out, start=1):
+            out.write(b_arr, bi)
         out.update_tags(ACQUISITION_START_TIME=meta["acquisition_time_utc"], OCEANTRACE_SOURCE=name)
 
     left, top = out_transform @ (0, 0)

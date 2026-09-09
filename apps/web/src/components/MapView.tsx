@@ -195,7 +195,7 @@ export default function MapView() {
     created = map;
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
     map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-right");
-    map.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: "OceanTrace AI · Open-Meteo · Copernicus" }), "bottom-right");
+    map.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: "Spill Forensics · Open-Meteo · Copernicus" }), "bottom-right");
     map.on("styleimagemissing", (e: any) => { if (!map.hasImage(e.id)) map.addImage(e.id, { width: 1, height: 1, data: new Uint8ClampedArray(4) }); });
     map.on("load", () => {
       const add = (id: string, data: GeoJSON.FeatureCollection = EMPTY) => map.addSource(id, { type: "geojson", data });

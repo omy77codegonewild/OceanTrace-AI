@@ -58,6 +58,58 @@ def create_case(name: str, data_mode: str, notes: str | None = None) -> dict[str
     return get_case(case_id)
 
 
+def create_synthetic_demo_case(name: str = "Synthetic Smoke Test Case") -> str:
+    """Create a synthetic case and populate it with fixture SAR and AIS via background job."""
+    c = create_case(name, "synthetic", "Automated synthetic smoke test fixture")
+    case_id = c["id"]
+
+    def _job(ctx: JobContext) -> dict[str, Any]:
+        ctx.progress(0.05, "initializing synthetic test case")
+        data_dir = get_settings().data_dir
+        fixture_sar = data_dir / "fixtures" / "synthetic_sar.tif"
+        fixture_ais = data_dir / "fixtures" / "synthetic_ais.csv"
+
+        if not fixture_sar.exists():
+            from tests.synth import make_synthetic_sar_geotiff
+            fixture_sar.parent.mkdir(parents=True, exist_ok=True)
+            make_synthetic_sar_geotiff(fixture_sar, [71.6, 18.2, 72.1, 18.7], size=800, acq=datetime(2026, 9, 1, 1, 0, tzinfo=timezone.utc))
+
+        if not fixture_ais.exists():
+            from tests.synth import make_synthetic_ais_csv
+            fixture_ais.parent.mkdir(parents=True, exist_ok=True)
+            make_synthetic_ais_csv(fixture_ais, [71.875, 18.45], datetime(2026, 8, 31, 19, 0, tzinfo=timezone.utc))
+
+        # Ingest scene + run detection
+        ctx.progress(0.2, "ingesting synthetic SAR imagery and running detection")
+        scene_id = f"scene_{uuid.uuid4().hex[:10]}"
+        scene_dir = _case_dir(case_id) / scene_id
+        scene_dir.mkdir(parents=True, exist_ok=True)
+        dest = scene_dir / "original.tif"
+        shutil.copy2(str(fixture_sar), dest)
+
+        cfg = get_algo_config()
+        meta = ingest_scene(dest, scene_dir, original_name="synthetic_sar.tif", preview_max_px=int(cfg.get("scene.preview_max_px", 2048)),
+                            working_crs=str(cfg.get("scene.working_crs", "EPSG:4326")), max_analysis_px=int(cfg.get("scene.max_analysis_px", 4000)))
+        meta.update({"sensor": "Sentinel-1 Synthetic", "data_mode": "synthetic"})
+        with db() as conn:
+            conn.execute("INSERT INTO scenes(id, case_id, acquisition_time, bounds, asset_uri, preview_uri, metadata, created_at) VALUES (?,?,?,?,?,?,?,?)",
+                         (scene_id, case_id, meta["acquisition_time_utc"], dumps(meta["bounds"]), str(scene_dir / "analysis.tif"), str(scene_dir / "preview.png"), dumps(meta), utcnow()))
+        _set_status(case_id, "scene_ready")
+
+        ctx.progress(0.4, "running slick detection")
+        det = _detect(case_id, scene_id, scene_dir, None, ctx)
+
+        # Import AIS fixture
+        ctx.progress(0.8, "importing synthetic AIS traffic")
+        ais_sum = import_ais_csv(case_id, fixture_ais, source_label="synthetic fixture", data_mode="synthetic")
+        _set_status(case_id, "ais_loaded")
+
+        ctx.progress(1.0, "synthetic test case ready")
+        return {"case_id": case_id, "scene_id": scene_id, "detection": det, "ais": ais_sum}
+
+    return submit("synthetic_demo_init", case_id, _job)
+
+
 def list_cases() -> list[dict[str, Any]]:
     with db() as conn:
         rows = conn.execute("SELECT id, name, status, data_mode, created_at, updated_at FROM cases ORDER BY created_at DESC").fetchall()
@@ -445,6 +497,32 @@ def ais_live_record_job(case_id: str, bbox: list[float], minutes: float) -> str:
     return submit("ais_live_record", case_id, _job)
 
 
+def ais_generate_synthetic_job(case_id: str) -> str:
+    case = get_case(case_id)
+    hc = get_hindcast(case_id)
+    if not hc:
+        raise ValueError("Run a hindcast first before generating corridor AIS traffic")
+
+    def _job(ctx: JobContext) -> dict[str, Any]:
+        from ..ais.synth import make_synthetic_ais_csv
+        ctx.progress(0.1, "synthesizing AIS corridor traffic matching release window")
+        c = shape(hc["origin_geometry"]).centroid
+        origin = [c.x, c.y]
+        rel_time = datetime.fromisoformat(hc["release_start"].replace("Z", "+00:00"))
+
+        tmp_csv = _case_dir(case_id) / "ais" / f"synth_{uuid.uuid4().hex[:6]}.csv"
+        tmp_csv.parent.mkdir(parents=True, exist_ok=True)
+        make_synthetic_ais_csv(tmp_csv, origin, rel_time)
+
+        ctx.progress(0.5, "importing synthesized traffic")
+        summary = import_ais_csv(case_id, tmp_csv, source_label="Synthetic Corridor Traffic", data_mode="synthetic", filename=tmp_csv.name)
+        _set_status(case_id, "ais_loaded")
+        audit(case_id, "ais.synthetic_generate", summary)
+        return summary
+
+    return submit("ais_synthetic_generate", case_id, _job)
+
+
 def attribute_job(case_id: str, hindcast_run_id: str | None, weights: dict[str, float] | None, excluded_mmsi: list[int] | None) -> str:
     case = get_case(case_id)
     hc = get_hindcast(case_id, hindcast_run_id, include_spacetime=True)
@@ -549,7 +627,7 @@ def export_case(case_id: str, fmt: str) -> dict[str, Any]:
     for r in log_rows:
         r["detail"] = loads(r["detail"])
     cfg_snapshot = loads(cfg_row["config_snapshot"]) if cfg_row else None
-    disclaimer = ("OceanTrace AI output supports investigation prioritisation. Slick classes, origin regions, release windows and vessel scores are model estimates with "
+    disclaimer = ("Spill Forensics output supports investigation prioritisation. Slick classes, origin regions, release windows and vessel scores are model estimates with "
                   "stated uncertainty; they are not legal findings and do not establish responsibility. Data modes: " + case["data_mode"].upper() + ".")
     if fmt == "geojson":
         feats = [{**f, "properties": {**f["properties"], "layer": "slick"}} for f in case["slicks"]["features"]]
