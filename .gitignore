@@ -1,0 +1,18 @@
+# secrets
+.env
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+# node
+apps/web/node_modules/
+apps/web/dist/
+# runtime data (keep fixtures + static land mask; drop everything produced at runtime)
+data/scenes/
+data/cases/
+data/env/
+data/ais/
+data/exports/
+data/models/*.onnx
+data/*.sqlite*

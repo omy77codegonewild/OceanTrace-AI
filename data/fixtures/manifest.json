@@ -1,0 +1,21 @@
+{
+  "data_mode": "synthetic",
+  "scene": "../data/fixtures/synthetic_sar.tif",
+  "ais_csv": "../data/fixtures/synthetic_ais.csv",
+  "bounds": [
+    71.6,
+    18.2,
+    72.1,
+    18.7
+  ],
+  "acquisition_time_utc": "2026-09-01T01:00:00Z",
+  "synthetic_release_time_utc": "2026-08-31T19:00:00Z",
+  "slick_centroid": [
+    71.875,
+    18.45
+  ],
+  "suspect_mmsi": 419001001,
+  "decoy_mmsi": 419001002,
+  "ais_rows": 1021,
+  "note": "SYNTHETIC fixture \u2014 label it as such when importing (data_mode=synthetic)."
+}

@@ -1,0 +1,158 @@
+# OceanTrace AI — versioned algorithm parameters (non-secret).
+# Every case persists a resolved snapshot of this file + user overrides.
+# Secrets (API keys) NEVER go here — use .env (see .env.example).
+config_version: "0.3.0"
+
+scene:
+  max_upload_mb: 1024
+  allowed_extensions: [".tif", ".tiff", ".png", ".jpg", ".jpeg"]
+  working_crs: "EPSG:4326"
+  # Preview PNG size for the map overlay (longest side, px)
+  preview_max_px: 2048
+  # Scenes larger than this (longest side, px) are block-averaged down for analysis.
+  # Full Sentinel-1 GRD (~25k px) -> ~6x (≈60 m pixels), still adequate for slicks > 0.1 km².
+  max_analysis_px: 4000
+  # Local metric CRS for area/length computations is derived per-scene (UTM zone),
+  # never hardcoded.
+
+detection:
+  # Adapter selection: "onnx" (your uploaded model) or "classical" (dark-spot CFAR fallback).
+  # If "onnx" is selected but no weights are present, the API refuses to silently
+  # fall back — the run is labelled with the adapter that actually executed.
+  adapter: "auto"          # auto = onnx if weights exist, else classical
+  onnx:
+    model_path: "data/models/oilspill_seg.onnx"
+    model_version: "user-onnx"
+    input_size: 512         # tile edge in pixels fed to the model
+    tile_overlap: 64        # pixel overlap between tiles
+    normalize: "minmax"     # minmax | zscore | none  (per tile)
+    input_layout: "NCHW"    # NCHW | NHWC
+    input_channels: 1       # 1 = single-band SAR; 3 = replicated RGB
+    # Output handling: "sigmoid" (1-ch logits), "softmax" (multi-class),
+    # "prob" (already probability)
+    output_activation: "auto"
+    class_index_oil: 1      # only used for softmax/multi-class outputs
+    class_index_lookalike: -1  # -1 => model has no look-alike class
+  classical:
+    model_version: "classical-darkspot-v0.3"
+    # Two-pass adaptive dark-spot detector: pixel is dark if dB < (local_mean - k*local_std)
+    # with the background re-estimated excluding preliminary dark pixels.
+    window_px: 151
+    k_sigma: 3.0
+    min_region_px: 60          # connected components smaller than this are dropped (px)
+    min_contrast_db: 2.0       # regions darker than background by less than this -> uncertain band
+    morphology_px: 3
+    smooth_sigma_px: 2.0       # log-domain speckle smoothing
+    contrast_full_conf_db: 6.0 # contrast (dB) at which calibrated probability reaches 1.0
+  postprocess:
+    prob_threshold: 0.5
+    uncertain_band: [0.35, 0.5]   # probs in this band -> class "uncertain"
+    min_area_km2: 0.15
+    max_features: 25
+    simplify_tolerance_m: 30
+    land_mask: true         # remove polygons whose centroid is on land
+
+environment:
+  provider: "open_meteo"    # open_meteo | netcdf_upload | constant
+  open_meteo:
+    marine_url: "https://marine-api.open-meteo.com/v1/marine"
+    archive_url: "https://archive-api.open-meteo.com/v1/archive"
+    forecast_url: "https://api.open-meteo.com/v1/forecast"
+    grid_points_per_axis: 4       # sample grid NxN over the padded AOI
+    aoi_pad_deg: 0.6
+    timeout_s: 40
+    # Archive (ERA5) lags real time by ~5 days; if scene is newer, wind comes
+    # from the forecast API (which includes recent past) — recorded in provenance.
+    archive_lag_days: 6
+  # Deterministic constant field for tests / when explicitly requested
+  constant:
+    u_current: 0.10
+    v_current: 0.05
+    u_wind: 3.0
+    v_wind: 1.0
+
+hindcast:
+  defaults:
+    hindcast_hours: 24
+    time_step_minutes: 15
+    particle_count: 600
+    ensemble_members: 20
+    windage_range: [0.02, 0.04]
+    current_scale_range: [0.8, 1.2]
+    current_direction_jitter_deg: 15
+    wind_speed_jitter_frac: 0.15
+    diffusion_m2_s: 1.0           # horizontal eddy diffusivity for random walk
+    probability_mass: 0.70        # region mass for origin polygon
+    integrator: "rk4"             # rk4 | euler
+  limits:                          # user overrides validated against these
+    hindcast_hours: [1, 96]
+    time_step_minutes: [5, 60]
+    particle_count: [50, 5000]
+    ensemble_members: [1, 100]
+    windage: [0.0, 0.08]
+    current_scale: [0.3, 2.0]
+    diffusion_m2_s: [0.0, 50.0]
+  origin_window:
+    # Window = contiguous interval around the peak of the deterministic-flow
+    # convergence signal (control-run clustering ratio - 1) where the signal
+    # stays >= fraction * peak. If the peak signal is below
+    # min_convergence_signal the full plausible horizon is reported instead.
+    # Documented heuristic (see docs/methods.md) — never an exact time.
+    score_fraction_of_peak: 0.5
+    min_convergence_signal: 0.15
+    min_window_hours: 2
+    min_age_hours: 0.5
+    density_grid_cells: 60
+    agreement_scale_km: 5.0
+    vis_particles: 400
+    vis_paths: 60
+  forecast:
+    hours: 24
+
+ais:
+  csv:
+    required_columns: [mmsi, timestamp_utc, longitude, latitude]
+    optional_columns: [sog_knots, cog_deg, heading_deg, vessel_name, vessel_type, length_m, source]
+    max_rows: 2000000
+  candidate_search:
+    origin_buffer_km: 25
+    time_pad_hours: 6
+  features:
+    loiter_speed_knots: 1.5
+    loiter_min_minutes: 30
+    gap_multiple_of_expected: 4.0
+    min_gap_minutes: 20
+    proximity_scale_km: 15        # P_static = exp(-d / scale)
+    spacetime_scale_km: 5         # P_spacetime = exp(-d_st / scale), d_st = distance to backtracked oil at same time
+  live:
+    provider: "aisstream"
+    url: "wss://stream.aisstream.io/v0/stream"
+    record_minutes_default: 10
+
+attribution:
+  weights:
+    proximity: 0.30
+    temporal_overlap: 0.25
+    heading_compatibility: 0.10
+    loitering: 0.10
+    ais_gap_relevance: 0.15
+    vessel_type: 0.10
+  vessel_type_plausibility:
+    # normalized plausibility that a vessel type could discharge oil (documented prior)
+    tanker: 1.0
+    "crude oil tanker": 1.0
+    "chemical tanker": 0.9
+    "product tanker": 0.95
+    cargo: 0.7
+    "bulk carrier": 0.7
+    container: 0.6
+    fishing: 0.4
+    passenger: 0.3
+    tug: 0.5
+    "offshore supply": 0.6
+    unknown: 0.5
+  priority_bands:
+    high: 80
+    medium: 55
+    low: 30
+  top_n: 10

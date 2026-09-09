@@ -1,0 +1,35 @@
+# OceanTrace AI backend — Python 3.11+ (developed on 3.13)
+# Install:  pip install -r requirements.txt
+# NOTE: do NOT add `global-land-mask` — it decompresses ~1 GB at import; the vector
+#       Natural Earth land mask in data/static/ne_10m_land.wkb replaces it.
+
+# API
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+pydantic>=2.7
+pydantic-settings>=2.3
+python-dotenv>=1.0
+aiofiles>=23.2
+httpx>=0.27
+websockets>=12          # aisstream.io live AIS recorder
+jinja2>=3.1             # HTML report
+
+# Geospatial / numerics
+numpy>=1.26
+scipy>=1.12
+rasterio>=1.3.10        # GeoTIFF/COG I/O, GCP georeferencing (bundles GDAL wheels)
+affine>=2.4
+shapely>=2.0            # STRtree + vectorised point-in-polygon (land mask)
+pyproj>=3.6
+pillow>=10.3
+pandas>=2.2             # AIS CSV importer
+xarray>=2024.3          # CF-NetCDF met-ocean uploads
+netCDF4>=1.6
+PyYAML>=6.0
+
+# Detection
+onnxruntime>=1.17       # user-supplied segmentation model (CPU provider); GPU: onnxruntime-gpu
+
+# Dev / tests
+pytest>=8.0
