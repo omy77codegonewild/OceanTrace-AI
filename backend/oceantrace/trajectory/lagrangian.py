@@ -278,7 +278,7 @@ class DensityGrid:
         geom = unary_union(cells)
         if smooth_km > 0:
             deg = smooth_km / 111.0
-            geom = geom.buffer(deg, join_style=1).buffer(-deg * 0.6, join_style=1)
+            geom = geom.buffer(deg, join_style="round").buffer(-deg * 0.6, join_style="round")
             # buffering creates dense arcs; simplify to ~1/10 of a grid cell so payloads stay small
             geom = geom.simplify(min(deg * 0.2, 0.15 * float(self.xe[1] - self.xe[0])), preserve_topology=True)
         return set_precision_5(geom)

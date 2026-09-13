@@ -24,6 +24,8 @@ from rasterio.transform import from_bounds
 from rasterio.warp import calculate_default_transform, reproject
 from rasterio.crs import CRS as RioCRS
 
+from oceantrace.geo.utils import meters_per_degree
+
 log = logging.getLogger("oceantrace.scenes")
 
 Image.MAX_IMAGE_PIXELS = None  # large SAR scenes; size is validated separately
@@ -158,9 +160,10 @@ def ingest_scene(
         meta["dtype"] = str(ds.dtypes[0])
         meta["width"], meta["height"] = ds.width, ds.height
 
+        min_lon = min_lat = max_lon = max_lat = 0.0
         if has_georef:
             src_crs = gcp_crs if has_gcps else ds.crs
-            meta["crs_original"] = src_crs.to_string()
+            meta["crs_original"] = src_crs.to_string() if src_crs is not None else None
             meta["georef_source"] = f"embedded_gcps({len(gcps)})" if has_gcps else "embedded"
             if ds.res:
                 meta["pixel_resolution_native"] = [abs(ds.res[0]), abs(ds.res[1])]
@@ -238,6 +241,9 @@ def ingest_scene(
         meta["downsample_factor"] = ov
         arr = bands_out[0]
 
+    if out_transform is None:
+        raise SceneValidationError("Failed to calculate transform for scene.")
+
     h, w = arr.shape
     analysis_path = scene_dir / "analysis.tif"
     with rasterio.open(
@@ -254,7 +260,6 @@ def ingest_scene(
     meta["bounds"] = bounds
     meta["crs"] = working_crs
     meta["pixel_size_deg"] = [abs(out_transform.a), abs(out_transform.e)]
-    from ..geo.utils import meters_per_degree
     mlon, mlat = meters_per_degree((bounds[1] + bounds[3]) / 2)
     meta["pixel_size_m"] = [round(abs(out_transform.a) * mlon, 2), round(abs(out_transform.e) * mlat, 2)]
     meta["analysis_shape"] = [h, w]
@@ -264,9 +269,11 @@ def ingest_scene(
     pw, ph = max(1, int(w / scale)), max(1, int(h / scale))
     u8 = _stretch_to_uint8(arr, None)
     img = Image.fromarray(u8)
+    _resample_bilinear = getattr(getattr(Image, "Resampling", None), "BILINEAR", 2)
+    _resample_nearest = getattr(getattr(Image, "Resampling", None), "NEAREST", 0)
     if (pw, ph) != (w, h):
-        img = img.resize((pw, ph), Image.BILINEAR)
-    alpha = Image.fromarray(((np.isfinite(arr)) * 255).astype(np.uint8)).resize((pw, ph), Image.NEAREST)
+        img = img.resize((pw, ph), _resample_bilinear)
+    alpha = Image.fromarray(((np.isfinite(arr)) * 255).astype(np.uint8)).resize((pw, ph), _resample_nearest)
     rgba = Image.merge("LA", (img, alpha))
     preview_path = scene_dir / "preview.png"
     rgba.save(preview_path, optimize=True)
