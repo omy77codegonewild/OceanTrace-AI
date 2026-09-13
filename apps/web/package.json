@@ -9,12 +9,15 @@
     "preview": "vite preview --host 0.0.0.0 --port 5173"
   },
   "dependencies": {
+    "@radix-ui/react-tooltip": "^1.2.16",
     "maplibre-gl": "^4.7.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zustand": "^4.5.5"
   },
   "devDependencies": {
+    "@mapbox/mapbox-gl-draw": "^1.5.1",
+    "@types/mapbox__mapbox-gl-draw": "^1.4.9",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",

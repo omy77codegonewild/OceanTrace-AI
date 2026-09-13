@@ -47,6 +47,9 @@ interface State {
   theme: Theme;
   health: any;
   config: any;
+  isDrawingBBox: boolean;
+  drawnBbox: string | null;
+  originDisplayType: "discrete" | "heatmap";
 
   setCase: (id: string | null) => Promise<void>;
   refresh: () => Promise<void>;
@@ -67,6 +70,9 @@ interface State {
   setBusy: (k: string, v: boolean) => void;
   toggleTheme: () => void;
   init: () => Promise<void>;
+  setIsDrawingBBox: (v: boolean) => void;
+  setDrawnBbox: (b: string | null) => void;
+  setOriginDisplayType: (t: "discrete" | "heatmap") => void;
 }
 
 export const useStore = create<State>((set, get) => ({
@@ -92,6 +98,13 @@ export const useStore = create<State>((set, get) => ({
   theme: (localStorage.getItem("ot.theme") as Theme) || "dark",
   health: null,
   config: null,
+  isDrawingBBox: false,
+  drawnBbox: null,
+  originDisplayType: "discrete",
+
+  setIsDrawingBBox: (v) => set({ isDrawingBBox: v }),
+  setDrawnBbox: (b) => set({ drawnBbox: b }),
+  setOriginDisplayType: (t) => set({ originDisplayType: t }),
 
   init: async () => {
     // Apply persisted theme on startup

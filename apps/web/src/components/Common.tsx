@@ -1,4 +1,5 @@
 import { ReactNode } from "react";
+import * as Tooltip from "@radix-ui/react-tooltip";
 import { useStore } from "../lib/store";
 
 /** Compact sun/moon toggle for switching between light and dark themes. */
@@ -71,7 +72,7 @@ export const Factor = ({ name, value, amber }: { name: string; value: number; am
   </div>
 );
 
-export const Slider = ({ label, value, min, max, step, onChange, fmt }: { label: string; value: number; min: number; max: number; step: number; onChange: (v: number) => void; fmt?: (v: number) => string }) => (
+export const Slider = ({ label, value, min, max, step, onChange, fmt }: { label: ReactNode; value: number; min: number; max: number; step: number; onChange: (v: number) => void; fmt?: (v: number) => string }) => (
   <div>
     <div className="row small" style={{ justifyContent: "space-between" }}>
       <span className="muted">{label}</span>
@@ -97,6 +98,26 @@ export const Icon = ({ name }: { name: string }) => {
     last: <><path d="M18 5v14M5 5l11 7-11 7z" fill="currentColor" /></>,
     upload: <><path d="M12 16V4M6 10l6-6 6 6M4 20h16" /></>,
     sat: <><path d="M4 14l6 6M9 9l6 6M5 13l4-4 6 6-4 4zM13 5l6 6M11 7l2-2 6 6-2 2z" /></>,
+    expand: <><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></>,
+    compress: <><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M10 14l-7 7" /></>,
   };
-  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{p[name]}</svg>;
+  return <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{p[name]}</svg>;
 };
+
+export const InfoTooltip = ({ text, children }: { text: ReactNode; children: ReactNode }) => (
+  <Tooltip.Provider delayDuration={200}>
+    <Tooltip.Root>
+      <Tooltip.Trigger asChild>
+        <span style={{ cursor: "help", borderBottom: "1px dotted var(--muted)", display: "inline-flex", alignItems: "center", gap: "2px" }}>
+          {children}
+        </span>
+      </Tooltip.Trigger>
+      <Tooltip.Portal>
+        <Tooltip.Content className="TooltipContent" sideOffset={6} collisionPadding={12}>
+          {text}
+          <Tooltip.Arrow className="TooltipArrow" width={11} height={5} />
+        </Tooltip.Content>
+      </Tooltip.Portal>
+    </Tooltip.Root>
+  </Tooltip.Provider>
+);

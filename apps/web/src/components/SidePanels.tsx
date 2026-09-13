@@ -159,8 +159,8 @@ export function TopSuspectCard() {
         <div className={`score ${c.priority}`}>{c.score.toFixed(1)}</div>
       </div>
       <div className="col" style={{ gap: 4, marginTop: 8 }}>
-        {Object.entries(c.factors).filter(([k]) => k !== "data_quality").map(([k, v]) => <Factor key={k} name={k.replace(/_/g, " ")} value={v as number} />)}
-        <Factor name="data quality D" value={c.factors.data_quality} amber />
+        {Object.entries(c.factors || {}).filter(([k]) => k !== "data_quality").map(([k, v]) => <Factor key={k} name={k.replace(/_/g, " ")} value={v as number} />)}
+        {c.factors?.data_quality != null && <Factor name="data quality D" value={c.factors.data_quality} amber />}
       </div>
       <div className="small muted" style={{ marginTop: 6 }}>Min distance {fmtNum(c.raw?.min_distance_km, 1)} km{c.raw?.spacetime_min_km != null ? ` · space-time ${fmtNum(c.raw.spacetime_min_km, 1)} km` : ""} · {c.raw?.positions} fixes</div>
       <div className="row small" style={{ marginTop: 6 }}>

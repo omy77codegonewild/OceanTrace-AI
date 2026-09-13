@@ -9,6 +9,7 @@ export default function Landing() {
   const [name, setName] = useState("");
   const [mode, setMode] = useState<DataMode>("real");
   const [busy, setBusy] = useState(false);
+  const [filterMode, setFilterMode] = useState<string>("real");
 
   const load = () => api.cases().then(setCases).catch((e) => notify("error", e.message));
   useEffect(() => {
@@ -63,6 +64,8 @@ export default function Landing() {
     : health?.detector?.active_adapter === "onnx"
     ? `ONNX MODEL (${health.detector.model_version || "ACTIVE"})`
     : "CLASSICAL DETECTOR (FALLBACK)";
+
+  const filteredCases = cases.filter((c) => c.data_mode === filterMode);
 
   return (
     <div className="landing">
@@ -126,9 +129,21 @@ export default function Landing() {
         <div>
           <div className="card">
             <div className="row" style={{ marginBottom: 10 }}><h4 style={{ margin: 0 }}>Open a case</h4><button className="btn sm ghost right" onClick={load}>↻ refresh</button></div>
+            <div className="row" style={{ gap: 4, padding: "4px", background: "var(--bg-elevated)", borderRadius: "6px", marginBottom: "12px" }}>
+              {["real", "synthetic", "imported"].map((m) => (
+                <button 
+                  key={m}
+                  className={`btn sm ${filterMode === m ? "primary" : "ghost"}`}
+                  style={{ flex: 1, textTransform: "capitalize" }}
+                  onClick={() => setFilterMode(m)}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
             <div className="caselist">
-              {cases.length === 0 && <div className="muted small">No cases yet. Create one on the left or launch the Synthetic Smoke Test.</div>}
-              {cases.map((c) => (
+              {filteredCases.length === 0 && <div className="muted small">No cases found for this filter.</div>}
+              {filteredCases.map((c) => (
                 <div className="item" key={c.id} onClick={() => setCase(c.id)}>
                   <div className="grow">
                     <div className="row"><b>{c.name}</b><ModeBadge mode={c.data_mode} /></div>

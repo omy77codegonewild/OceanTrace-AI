@@ -1,11 +1,11 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, fmtUtc } from "../lib/api";
 import { useStore } from "../lib/store";
 import { Badge, Card, Icon, KV } from "./Common";
 
 /** Step 1 — scene intake: upload a GeoTIFF/PNG or pull a real Sentinel-1 subset from the catalog; run detection. */
 export default function ScenePanel({ onClose }: { onClose: () => void }) {
-  const { caseId, caseData, runJob, notify, config } = useStore();
+  const { caseId, caseData, runJob, notify, config, isDrawingBBox, setIsDrawingBBox, drawnBbox, setDrawnBbox } = useStore();
   const [tab, setTab] = useState<"upload" | "catalog">("upload");
   const [file, setFile] = useState<File | null>(null);
   const [bounds, setBounds] = useState("");
@@ -21,6 +21,13 @@ export default function ScenePanel({ onClose }: { onClose: () => void }) {
   const [items, setItems] = useState<any[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [pol, setPol] = useState("vv");
+
+  useEffect(() => {
+    if (drawnBbox) {
+      setBbox(drawnBbox);
+      setDrawnBbox(null);
+    }
+  }, [drawnBbox]);
 
   const isGeo = file && /\.tiff?$/i.test(file.name);
   const detectOpts = JSON.stringify({ prob_threshold: thr, min_area_km2: minArea });
@@ -65,7 +72,7 @@ export default function ScenePanel({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="overlay map-panel">
+    <div className="overlay map-panel" style={{ display: isDrawingBBox ? "none" : undefined }}>
       <div className="row" style={{ marginBottom: 10 }}>
         <b>SCENE INTAKE</b>
         <button className="btn sm ghost right" onClick={onClose}>✕</button>
@@ -100,7 +107,10 @@ export default function ScenePanel({ onClose }: { onClose: () => void }) {
       {tab === "catalog" && (
         <div className="col">
           <div className="small muted">Searches ESA Copernicus Sentinel-1 GRD via Microsoft Planetary Computer (free, no key). Only the requested bbox is pulled through HTTP range reads.</div>
-          <div><label className="lbl">Area bbox (WGS84)</label><input className="input mono" placeholder="72.3,18.5,72.9,19.1" value={bbox} onChange={(e) => setBbox(e.target.value)} /></div>
+          <div className="row" style={{ alignItems: "flex-end" }}>
+            <div className="grow"><label className="lbl">Area bbox (WGS84)</label><input className="input mono" placeholder="72.3,18.5,72.9,19.1" value={bbox} onChange={(e) => setBbox(e.target.value)} /></div>
+            <button className="btn outline" style={{ marginBottom: 2 }} onClick={() => setIsDrawingBBox(true)}><Icon name="edit" /> Draw</button>
+          </div>
           <div className="row">
             <div className="grow"><label className="lbl">From</label><input className="input mono" type="date" value={start} onChange={(e) => setStart(e.target.value)} /></div>
             <div className="grow"><label className="lbl">To</label><input className="input mono" type="date" value={end} onChange={(e) => setEnd(e.target.value)} /></div>

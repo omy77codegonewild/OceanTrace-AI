@@ -5,7 +5,7 @@ import { Badge, Slider } from "./Common";
 
 /** Step 2 — Lagrangian drift forcing: all parameters go to the API and are validated against config limits. */
 export default function HindcastPanel({ onClose }: { onClose: () => void }) {
-  const { caseId, caseData, selectedSlick, runJob, config, hindcast, notify } = useStore();
+  const { caseId, caseData, selectedSlick, runJob, config, hindcast, notify, originDisplayType, setOriginDisplayType } = useStore();
   const d = config?.hindcast?.defaults || {};
   const lim = config?.hindcast?.limits || {};
   const [hours, setHours] = useState<number>(d.hindcast_hours ?? 24);
@@ -73,6 +73,23 @@ export default function HindcastPanel({ onClose }: { onClose: () => void }) {
         <Slider label="Current direction jitter σ" value={cjit} min={0} max={60} step={1} onChange={setCjit} fmt={(v) => `${v}°`} />
         <Slider label="Eddy diffusivity" value={diff} min={0} max={r("diffusion_m2_s", 1, 50)} step={0.5} onChange={setDiff} fmt={(v) => `${v} m²/s`} />
         <Slider label="Origin region probability mass" value={mass} min={30} max={95} step={5} onChange={setMass} fmt={(v) => `${v} %`} />
+        
+        <div style={{ marginBottom: 4 }}>
+          <label className="lbl">Origin Display Mode</label>
+          <div className="row" style={{ gap: 4, padding: "4px", background: "var(--bg-elevated)", borderRadius: "6px" }}>
+            {["discrete", "heatmap"].map((m) => (
+              <button 
+                key={m}
+                className={`btn sm ${originDisplayType === m ? "primary" : "ghost"}`}
+                style={{ flex: 1, textTransform: "capitalize" }}
+                onClick={() => setOriginDisplayType(m as "discrete" | "heatmap")}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="row">
           <div className="grow"><label className="lbl">Integrator</label><select className="input" value={integ} onChange={(e) => setInteg(e.target.value)}><option value="rk4">RK4</option><option value="euler">Euler</option></select></div>
           <div className="grow"><label className="lbl">Environment source</label>

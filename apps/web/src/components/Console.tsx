@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { fmtUtc } from "../lib/api";
 import { LayerVis, Panel, useStore } from "../lib/store";
 import AisPanel from "./AisPanel";
-import { Badge, Icon, ModeBadge, Spinner, ThemeToggle } from "./Common";
+import { Badge, Icon, ModeBadge, Spinner, ThemeToggle, InfoTooltip } from "./Common";
 import DossierPanel from "./DossierPanel";
 import EvidencePanel from "./EvidencePanel";
 import HindcastPanel from "./HindcastPanel";
@@ -32,8 +32,8 @@ function MetOcean() {
   const dir = (u: number, v: number) => Math.round(((Math.atan2(u, v) * 180) / Math.PI + 360) % 360);
   return (
     <div className="row" style={{ gap: 14 }}>
-      <div><div className="xs muted">Current ({ev.provider})</div><div className="mono cyan small">{Math.hypot(uc, vc).toFixed(2)} m/s → {dir(uc, vc)}°</div></div>
-      <div><div className="xs muted">Wind 10 m</div><div className="mono cyan small">{(Math.hypot(uw, vw) * 1.944).toFixed(1)} kt → {dir(uw, vw)}°</div></div>
+      <div><div className="xs muted"><InfoTooltip text="Ocean surface current vector driving the spill drift.">Current ({ev.provider})</InfoTooltip></div><div className="mono cyan small">{Math.hypot(uc, vc).toFixed(2)} m/s → {dir(uc, vc)}°</div></div>
+      <div><div className="xs muted"><InfoTooltip text="10-meter altitude wind vector driving the spill (windage).">Wind 10 m</InfoTooltip></div><div className="mono cyan small">{(Math.hypot(uw, vw) * 1.944).toFixed(1)} kt → {dir(uw, vw)}°</div></div>
       <Badge kind={ev.data_mode}>{ev.data_mode}</Badge>
     </div>
   );
@@ -42,6 +42,36 @@ function MetOcean() {
 export default function Console() {
   const st = useStore();
   const { caseData, hindcast, attribution, panel, setPanel, tool, setTool, focus, setFocus, layers, toggleLayer, jobs, replayStep, setReplay, playing, setPlaying, health, selectedMmsi, selectedSlick } = st;
+  const [mapFullscreen, setMapFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handleFsChange = () => {
+      setMapFullscreen(!!document.fullscreenElement);
+      setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
+      setTimeout(() => window.dispatchEvent(new Event('resize')), 450);
+    };
+    document.addEventListener("fullscreenchange", handleFsChange);
+    return () => document.removeEventListener("fullscreenchange", handleFsChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  };
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key.toLowerCase() === 'f') {
+        toggleFullscreen();
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, []);
 
   const stepDone = [!!caseData?.slicks.features.length, !!hindcast, !!attribution, !!(attribution && caseData?.slicks.features.some((f) => f.properties.review_status))];
   const activeStep = !stepDone[0] ? 1 : !stepDone[1] ? 2 : !stepDone[2] ? 3 : 4;
@@ -86,7 +116,7 @@ export default function Console() {
   const showMap = panel === "map" || panel === "replay";
 
   return (
-    <div className="app">
+    <div className={`app ${mapFullscreen ? "fullscreen" : ""}`}>
       <header className="topbar">
         <div className="row" style={{ gap: 10, alignItems: "center" }}>
           <img src="/logo.png" alt="Spill Forensics Logo" style={{ height: "28px", width: "auto", display: "block" }} />
@@ -131,6 +161,10 @@ export default function Console() {
         {showMap && (
           <>
             <div className="overlay map-focus">
+              <button className={`chip ${mapFullscreen ? "active" : ""}`} onClick={toggleFullscreen} title={mapFullscreen ? "Exit Fullscreen" : "Fullscreen"} style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "3px 6px", fontSize: 16 }}>
+                <Icon name={mapFullscreen ? "compress" : "expand"} />
+              </button>
+              <div style={{ width: 1, height: 16, background: "var(--line)", margin: "0 4px" }} />
               {([["corridor", "Full Corridor"], ["slick", "Slick Poly"], ["origin", "Spill Origin"], ["suspect", "Top Suspect"]] as const).map(([k, l]) => (
                 <button key={k} className={`chip ${focus === k ? "active" : ""}`} onClick={() => setFocus(k)} disabled={(k === "origin" && !hindcast) || (k === "suspect" && !attribution?.candidates.length)}>{l}</button>
               ))}
@@ -148,9 +182,9 @@ export default function Console() {
             </div>
             <div className="overlay map-legend">
               <div className="xs muted">Legend</div>
-              <span><i style={{ background: "#f43f5e" }} />slick (oil) · <i style={{ background: "#f59e0b" }} />uncertain</span>
-              <span><i style={{ background: "#f59e0b", opacity: 0.6 }} />origin 50/70/90% · <i style={{ background: "#22d3ee" }} />particles T−{hours[Math.min(replayStep, Math.max(hours.length - 1, 0))] ?? "—"} h</span>
-              <span><i style={{ background: "#22c55e" }} />candidate track · <i style={{ background: "#fb923c" }} />AIS gap · <i style={{ background: "#a78bfa" }} />forecast</span>
+              <span><i style={{ background: "#f43f5e" }} />slick (oil) · <i style={{ background: "#f59e0b" }} /><InfoTooltip text="Look-alikes (e.g., biological slicks or wind shadows) lacking high confidence for crude oil.">uncertain</InfoTooltip></span>
+              <span><i style={{ background: "#f59e0b", opacity: 0.6 }} /><InfoTooltip text="Probability footprint indicating where the spill originated.">origin 50/70/90%</InfoTooltip> · <i style={{ background: "#22d3ee" }} /><InfoTooltip text="Virtual particles representing the reversed drift trajectory over time.">particles</InfoTooltip> T−{hours[Math.min(replayStep, Math.max(hours.length - 1, 0))] ?? "—"} h</span>
+              <span><i style={{ background: "#22c55e" }} />candidate track · <i style={{ background: "#fb923c" }} /><InfoTooltip text="Time windows where the vessel's AIS transponder was inactive or out of coverage.">AIS gap</InfoTooltip> · <i style={{ background: "#a78bfa" }} />forecast</span>
               <span className="muted">© OpenStreetMap · Open-Meteo/Copernicus Marine · Sentinel-1 via Planetary Computer</span>
             </div>
             {tool === "scene" && <ScenePanel onClose={() => setTool("none")} />}

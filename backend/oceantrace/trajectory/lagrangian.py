@@ -27,6 +27,10 @@ from shapely.geometry import MultiPoint, Polygon, box, mapping
 from shapely.ops import unary_union
 
 
+from oceantrace.environment.fields import EnvField
+from oceantrace.geo.utils import geodesic_area_km2, meters_per_degree
+from oceantrace.geo import landmask as _landmask
+
 def set_precision_5(geom):
     """Round coordinates to 1e-5 deg (~1 m) to keep GeoJSON compact."""
     try:
@@ -35,11 +39,6 @@ def set_precision_5(geom):
         return g if not g.is_empty else geom
     except Exception:
         return geom
-
-from ..environment.fields import EnvField
-from ..geo.utils import geodesic_area_km2, meters_per_degree
-
-from ..geo import landmask as _landmask
 
 
 @dataclass
@@ -446,8 +445,19 @@ def forecast_summary(res: TrajectoryResult, cfg: dict[str, Any]) -> dict[str, An
     """Forward drift envelope: hourly 70% regions + swept envelope."""
     p = res.params
     S = p.n_steps
+    E, N = res.lon.shape[:2]
     grid = DensityGrid(res.lon, res.lat, int(cfg.get("density_grid_cells", 60)))
     hourly = max(1, int(round(60.0 / p.time_step_minutes)))
+
+    n_vis = min(int(cfg.get("vis_particles", 3000)), E * N)
+    rng = np.random.default_rng(42)
+    flat_idx = rng.choice(E * N, n_vis, replace=False)
+    ee, nn = np.divmod(flat_idx, N)
+    vis_steps = list(range(0, S + 1, max(1, hourly // 2))) if S > 0 else [0]
+    if vis_steps[-1] != S:
+        vis_steps.append(S)
+    cloud = [[[round(float(x), 5), round(float(y), 5)] for x, y in zip(res.lon[ee, nn, s], res.lat[ee, nn, s])] for s in vis_steps]
+
     rows = []
     for s in range(0, S + 1, hourly):
         h = grid.hist(res.lon[:, :, s], res.lat[:, :, s])
@@ -455,5 +465,5 @@ def forecast_summary(res: TrajectoryResult, cfg: dict[str, Any]) -> dict[str, An
         rows.append({"hours": round(float(abs(res.times[s] - res.times[0]) / 3600.0), 2), "time_utc": _iso(float(res.times[s])), "area_km2": round(a, 2),
                      "region": mapping(grid.mask_to_polygon(mk, smooth_km=0.4)), "centroid": [round(float(res.lon[:, :, s].mean()), 5), round(float(res.lat[:, :, s].mean()), 5)]})
     hull = MultiPoint([(float(x), float(y)) for x, y in zip(res.lon[:, :, ::hourly].ravel()[::7], res.lat[:, :, ::hourly].ravel()[::7])]).convex_hull
-    return {"steps": rows, "envelope": mapping(hull), "envelope_area_km2": round(geodesic_area_km2(hull), 2), "stranded_fraction": round(float(res.stranded.mean()), 4),
+    return {"steps": rows, "cloud": cloud, "envelope": mapping(hull), "envelope_area_km2": round(geodesic_area_km2(hull), 2), "stranded_fraction": round(float(res.stranded.mean()), 4),
             "coastal_impact_risk": bool(res.stranded.mean() > 0.02)}

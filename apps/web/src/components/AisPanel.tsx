@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { api, fmtUtc } from "../lib/api";
 import { useStore } from "../lib/store";
-import { Badge, Slider } from "./Common";
+import { Badge, Slider, InfoTooltip } from "./Common";
 
 /** Step 3 — AIS data + attribution. */
 export default function AisPanel({ onClose }: { onClose: () => void }) {
@@ -14,6 +14,14 @@ export default function AisPanel({ onClose }: { onClose: () => void }) {
   const defW = config?.attribution?.weights || {};
   const [w, setW] = useState<Record<string, number>>({ ...defW });
   const keys = ["proximity", "temporal_overlap", "heading_compatibility", "loitering", "ais_gap_relevance", "vessel_type"];
+  const keyDescs: Record<string, string> = {
+    proximity: "Distance between the vessel track and the reverse-drift origin region.",
+    temporal_overlap: "Time intersection of the vessel being near the simulated origin.",
+    heading_compatibility: "Alignment of the vessel's heading with the geometry of the spill.",
+    loitering: "Abnormal speed drops or circling behavior indicative of operational discharge.",
+    ais_gap_relevance: "Suspiciously timed transponder deactivations matching the spill time.",
+    vessel_type: "Statistical likelihood of this vessel class causing an oil spill (e.g., Tankers vs. Yachts)."
+  };
   const sum = keys.reduce((a, k) => a + (w[k] ?? defW[k] ?? 0), 0);
 
   const importCsv = async () => {
@@ -92,7 +100,7 @@ export default function AisPanel({ onClose }: { onClose: () => void }) {
         <div className="tile">
           <div className="xs cyan" style={{ marginBottom: 6 }}>Scoring weights (normalised to 1.00 · current sum {sum.toFixed(2)})</div>
           {keys.map((k) => (
-            <Slider key={k} label={k.replace(/_/g, " ")} value={w[k] ?? defW[k] ?? 0} min={0} max={0.6} step={0.05} onChange={(v) => setW({ ...w, [k]: v })} fmt={(v) => v.toFixed(2)} />
+            <Slider key={k} label={<InfoTooltip text={keyDescs[k]}>{k.replace(/_/g, " ")}</InfoTooltip>} value={w[k] ?? defW[k] ?? 0} min={0} max={0.6} step={0.05} onChange={(v) => setW({ ...w, [k]: v })} fmt={(v) => v.toFixed(2)} />
           ))}
           <button className="btn sm ghost" onClick={() => setW({ ...defW })}>reset to config defaults</button>
         </div>

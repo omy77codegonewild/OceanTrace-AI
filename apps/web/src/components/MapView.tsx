@@ -1,5 +1,7 @@
 import maplibregl, { LngLatBoundsLike, Map as MLMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import MapboxDraw from "@mapbox/mapbox-gl-draw";
+import "@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css";
 import { useEffect, useMemo, useRef } from "react";
 import { useStore } from "../lib/store";
 
@@ -85,7 +87,7 @@ export default function MapView() {
   const readyRef = useRef(false);
   const vectorRef = useRef(false);
   const st = useStore();
-  const { caseData, hindcast, attribution, tracks, forecast, selectedSlick, selectedMmsi, layers, replayStep, focus, focusNonce, basemap } = st;
+  const { caseData, hindcast, attribution, tracks, forecast, selectedSlick, selectedMmsi, layers, replayStep, focus, focusNonce, basemap, isDrawingBBox, originDisplayType } = st;
 
   // ---- derived GeoJSON --------------------------------------------------
   const slicksFC = useMemo<GeoJSON.FeatureCollection>(() => {
@@ -109,16 +111,23 @@ export default function MapView() {
     return { type: "FeatureCollection", features: cloud[idx].map((c: number[]) => ({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: c } })) };
   }, [hindcast, replayStep]);
 
+  const originCloudFC = useMemo<GeoJSON.FeatureCollection>(() => {
+    const cloud = hindcast?.detail?.cloud;
+    if (!cloud?.length) return EMPTY;
+    const idx = cloud.length - 1;
+    return { type: "FeatureCollection", features: cloud[idx].map((c: number[]) => ({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: c } })) };
+  }, [hindcast]);
+
   const pathsFC = useMemo<GeoJSON.FeatureCollection>(() => {
     const paths = hindcast?.detail?.paths;
     if (!paths?.length) return EMPTY;
     const idx = Math.min(replayStep + 1, paths[0].length);
-    return { type: "FeatureCollection", features: paths.map((p: number[][]) => ({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: p.slice(0, Math.max(2, idx)) } })) };
+    return { type: "FeatureCollection", features: paths.filter((p: number[][]) => p.length >= 2).map((p: number[][]) => ({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: p.slice(0, Math.max(2, idx)) } })) };
   }, [hindcast, replayStep]);
 
   const centroidLineFC = useMemo<GeoJSON.FeatureCollection>(() => {
     const steps = hindcast?.detail?.steps;
-    if (!steps?.length) return EMPTY;
+    if (!steps?.length || steps.length < 2) return EMPTY;
     return { type: "FeatureCollection", features: [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: steps.map((s: any) => s.centroid) } }] };
   }, [hindcast]);
 
@@ -183,6 +192,18 @@ export default function MapView() {
     return { type: "FeatureCollection", features: feats };
   }, [forecast]);
 
+  const forecastCloudFC = useMemo<GeoJSON.FeatureCollection>(() => {
+    const cloud = forecast?.cloud;
+    if (!cloud?.length) return EMPTY;
+    const feats: any[] = [];
+    for (const step of cloud) {
+        for (const c of step) {
+            feats.push({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: c } });
+        }
+    }
+    return { type: "FeatureCollection", features: feats };
+  }, [forecast]);
+
   // ---- map init ---------------------------------------------------------
   useEffect(() => {
     if (!ref.current || mapRef.current) return;
@@ -196,10 +217,33 @@ export default function MapView() {
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
     map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-right");
     map.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: "Spill Forensics · Open-Meteo · Copernicus" }), "bottom-right");
+    
+    const draw = new MapboxDraw({
+      displayControlsDefault: false,
+      controls: { polygon: false, trash: false },
+      defaultMode: "simple_select"
+    });
+    map.addControl(draw as any, "top-left");
+    (map as any)._drawControl = draw;
+
+    const updateArea = (e: any) => {
+      const data = draw.getAll();
+      if (data.features.length > 0) {
+        const b = boundsOf(data as any) as number[][];
+        if (b) {
+          useStore.getState().setDrawnBbox(`${b[0][0].toFixed(3)},${b[0][1].toFixed(3)},${b[1][0].toFixed(3)},${b[1][1].toFixed(3)}`);
+        }
+        draw.deleteAll();
+        useStore.getState().setIsDrawingBBox(false);
+      }
+    };
+    map.on('draw.create', updateArea);
+    map.on('draw.update', updateArea);
+
     map.on("styleimagemissing", (e: any) => { if (!map.hasImage(e.id)) map.addImage(e.id, { width: 1, height: 1, data: new Uint8ClampedArray(4) }); });
     map.on("load", () => {
       const add = (id: string, data: GeoJSON.FeatureCollection = EMPTY) => map.addSource(id, { type: "geojson", data });
-      ["footprint", "slicks", "origin", "steporigin", "cloud", "paths", "centroid", "tracks", "cands", "gaps", "cpa", "search", "forecast", "env"].forEach((s) => add(s));
+      ["footprint", "slicks", "origin", "steporigin", "cloud", "origin-cloud", "forecast-cloud", "paths", "centroid", "tracks", "cands", "gaps", "cpa", "search", "forecast", "env"].forEach((s) => add(s));
       map.addImage("arrow-cur", arrowImage("#22d3ee"), { sdf: false });
       map.addImage("arrow-wind", arrowImage("#f8fafc"), { sdf: false });
 
@@ -211,6 +255,48 @@ export default function MapView() {
       // MapLibre does not allow data-driven line-dasharray -> two layers (solid 50/70, dashed 90)
       map.addLayer({ id: "origin-line", type: "line", source: "origin", filter: ["!=", ["get", "level"], 90], paint: { "line-color": "#fbbf24", "line-width": ["match", ["get", "level"], 70, 2, 1] } });
       map.addLayer({ id: "origin-line90", type: "line", source: "origin", filter: ["==", ["get", "level"], 90], paint: { "line-color": "#fbbf24", "line-width": 1, "line-dasharray": [3, 2] } });
+      map.addLayer({
+        id: "origin-heatmap",
+        type: "heatmap",
+        source: "origin-cloud",
+        paint: {
+          "heatmap-weight": 1,
+          "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 0, 1, 9, 1.5],
+          "heatmap-color": [
+            "interpolate",
+            ["linear"],
+            ["heatmap-density"],
+            0, "rgba(255, 255, 255, 0)",
+            0.2, "rgba(251, 191, 36, 0.3)",  // yellow, low opacity
+            0.5, "rgba(245, 158, 11, 0.6)",  // orange
+            0.8, "rgba(217, 119, 6, 0.9)",   // dark orange
+            1, "rgba(180, 83, 9, 1)"         // darker orange
+          ],
+          "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 0, 2, 9, 15, 12, 30],
+          "heatmap-opacity": 0.7
+        }
+      });
+      map.addLayer({
+        id: "forecast-heatmap",
+        type: "heatmap",
+        source: "forecast-cloud",
+        paint: {
+          "heatmap-weight": 1,
+          "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 0, 1, 9, 1.5],
+          "heatmap-color": [
+            "interpolate",
+            ["linear"],
+            ["heatmap-density"],
+            0, "rgba(255, 255, 255, 0)",
+            0.2, "rgba(196, 181, 253, 0.3)", 
+            0.5, "rgba(139, 92, 246, 0.6)",  
+            0.8, "rgba(109, 40, 217, 0.9)",  
+            1, "rgba(76, 29, 149, 1)"        
+          ],
+          "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 0, 2, 9, 15, 12, 30],
+          "heatmap-opacity": 0.7
+        }
+      });
       // met-ocean arrows sit above the scene raster + probability fills, below particles/tracks
       map.addLayer({ id: "env-cur", type: "symbol", source: "env", layout: { "icon-image": "arrow-cur", "icon-size": ["interpolate", ["linear"], ["get", "cur_speed_ms"], 0, 0.35, 0.5, 0.8, 1.5, 1.2], "icon-rotate": ["get", "cur_dir_to_deg"], "icon-rotation-alignment": "map", "icon-allow-overlap": true, "icon-ignore-placement": true }, paint: { "icon-opacity": 0.8 } });
       map.addLayer({ id: "env-wind", type: "symbol", source: "env", layout: { "icon-image": "arrow-wind", "icon-size": ["interpolate", ["linear"], ["get", "wind_speed_ms"], 0, 0.3, 5, 0.6, 15, 1.0], "icon-rotate": ["get", "wind_dir_to_deg"], "icon-rotation-alignment": "map", "icon-allow-overlap": true, "icon-ignore-placement": true, "icon-offset": [14, 0] }, paint: { "icon-opacity": 0.5 } });
@@ -251,6 +337,22 @@ export default function MapView() {
     return () => { cancelled = true; created?.remove(); mapRef.current = null; readyRef.current = false; };
   }, []);
 
+  // ---- drawing mode -----------------------------------------------------
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !readyRef.current) return;
+    const draw = (map as any)._drawControl;
+    if (!draw) return;
+    if (isDrawingBBox) {
+      draw.changeMode("draw_polygon");
+      map.getCanvas().style.cursor = "crosshair";
+    } else {
+      draw.changeMode("simple_select");
+      draw.deleteAll();
+      map.getCanvas().style.cursor = "";
+    }
+  }, [isDrawingBBox, readyRef.current]);
+
   // ---- scene raster overlay ---------------------------------------------
   const sceneKey = caseData?.scene?.id;
   useEffect(() => {
@@ -281,6 +383,8 @@ export default function MapView() {
   useEffect(() => push("cpa", cpaFC), [cpaFC, readyRef.current]);
   useEffect(() => push("search", searchFC), [searchFC, readyRef.current]);
   useEffect(() => push("forecast", forecastFC), [forecastFC, readyRef.current]);
+  useEffect(() => push("origin-cloud", originCloudFC), [originCloudFC, readyRef.current]);
+  useEffect(() => push("forecast-cloud", forecastCloudFC), [forecastCloudFC, readyRef.current]);
   useEffect(() => push("env", envFC), [envFC, readyRef.current]);
 
   // basemap switch: "dark" = vector layers visible, rasters hidden; otherwise the selected raster only
@@ -305,15 +409,17 @@ export default function MapView() {
     const vis = (ids: string[], on: boolean) => ids.forEach((id) => m.getLayer(id) && m.setLayoutProperty(id, "visibility", on ? "visible" : "none"));
     vis(["scene-img"], layers.scene);
     vis(["slicks-fill", "slicks-line"], layers.slicks);
-    vis(["origin-fill", "origin-line", "origin-line90"], layers.origin);
+    vis(["origin-fill", "origin-line", "origin-line90"], layers.origin && originDisplayType === "discrete");
+    vis(["origin-heatmap"], layers.origin && originDisplayType === "heatmap");
     vis(["cloud-pts", "paths-line", "centroid-line", "steporigin-line"], layers.particles);
     vis(["tracks-line"], layers.tracks);
     vis(["cands-line", "cpa-pts", "cpa-label"], layers.candidates);
     vis(["gaps-line"], layers.gaps);
-    vis(["forecast-fill", "forecast-line"], layers.forecast);
+    vis(["forecast-fill", "forecast-line"], layers.forecast && originDisplayType === "discrete");
+    vis(["forecast-heatmap"], layers.forecast && originDisplayType === "heatmap");
     vis(["search-line"], layers.search);
     vis(["env-cur", "env-wind"], layers.vectors);
-  }, [layers, readyRef.current, sceneKey]);
+  }, [layers, originDisplayType, readyRef.current, sceneKey]);
 
   // ---- focus / camera ---------------------------------------------------
   useEffect(() => {
